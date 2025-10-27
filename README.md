@@ -2,14 +2,30 @@
 
 Este proyecto despliega n8n en Google Cloud Platform con una configuración optimizada para respuesta inmediata y alta disponibilidad, eliminando los "cold starts".
 
-## 🏗️ Arquitectura Desplegada
+## 🏗️ Arquitectura del Sistema
 
-Este repositorio utiliza Terraform para aprovisionar un ecosistema n8n robusto y listo para producción en Google Cloud Platform. La arquitectura se compone de los siguientes elementos clave:
+Este repositorio utiliza Terraform para aprovisionar un ecosistema n8n robusto y listo para producción en GCP. La arquitectura se adhiere a las mejores prácticas de seguridad y gestión declarativa (Infraestructura como Código).
 
-- **Google Cloud Run**: Sirve la aplicación n8n, configurada con una instancia mínima para garantizar una respuesta inmediata y eliminar los "arranques en frío" (cold starts).
-- **Google Cloud SQL**: Una instancia PostgreSQL (`db-f1-micro`) actúa como el backend de base de datos persistente para todos los workflows, credenciales y ejecuciones de n8n.
-- **Google Secret Manager**: Almacena de forma segura todas las credenciales sensibles, como la clave de encriptación de n8n y las contraseñas de la base de datos.
-- **IAM y Service Accounts**: Se configura una cuenta de servicio dedicada para n8n con los permisos mínimos necesarios para acceder a la base de datos y a los secretos, siguiendo el principio de mínimo privilegio.
+- **`Google Cloud Run`**: Sirve la aplicación n8n. Se configura con `min_instances = 1` para garantizar una operación `always-on`, eliminando la latencia de "arranque en frío" y asegurando disponibilidad inmediata.
+- **`Google Cloud SQL`**: Una instancia PostgreSQL (`db-f1-micro`) actúa como el backend de persistencia para workflows, credenciales y ejecuciones. El acceso está restringido, requiriendo el **Cloud SQL Auth Proxy** para conexiones externas.
+- **`Google Secret Manager`**: Centraliza la gestión de todos los datos sensibles. Las contraseñas y claves de encriptación son generadas y rotadas en cada `terraform apply`, y el servicio n8n las consume dinámicamente.
+- **`IAM y Service Accounts`**: Se aprovisiona una Service Account dedicada (`n8n-sa`) con un conjunto de roles de mínimo privilegio, asegurando que el servicio solo acceda a los recursos indispensables (Cloud SQL, Secret Manager).
+
+## ✨ Principios de Diseño (Design Principles)
+
+Este proyecto no es solo un conjunto de scripts, sino una implementación de principios de plataforma reutilizables:
+
+1.  **Seguridad por Diseño (Security by Design):**
+    *   **Cero Credenciales Hardcodeadas:** Todos los secretos son gestionados fuera del código.
+    *   **Mínimo Privilegio (Least Privilege):** La Service Account de n8n solo tiene los permisos `roles/cloudsql.client` y `roles/secretmanager.secretAccessor`.
+    *   **Aislamiento de Red:** La base de datos carece de IP pública y no es directamente accesible desde internet.
+
+2.  **Gestión 100% Declarativa (Infrastructure as Code):**
+    *   El estado completo de la infraestructura está definido en el código Terraform. No se requieren pasos manuales en la consola de GCP.
+    *   El sistema es reproducible, versionable y auditable.
+
+3.  **Modularidad y Reutilización:**
+    *   La separación lógica en archivos (`run.tf`, `sql.tf`, `secrets.tf`) permite que este repositorio funcione como un "acelerador" o un *template de plataforma* para futuros despliegues de servicios similares.
 
 ---
 
