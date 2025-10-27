@@ -1,19 +1,32 @@
-# n8n GCP Deployment - Configuración Mínima
+# n8n GCP Deployment - Configuración de Alta Disponibilidad
 
-Este proyecto despliega n8n en Google Cloud Platform con una configuración optimizada para costo mínimo.
+Este proyecto despliega n8n en Google Cloud Platform con una configuración optimizada para respuesta inmediata y alta disponibilidad, eliminando los "cold starts".
 
-## 📋 Requisitos Previos
+## 🏗️ Arquitectura Desplegada
 
-1. Cuenta de GCP con billing habilitado
-2. Proyecto de GCP creado
-3. `gcloud` CLI instalado
-4. `terraform` instalado (>= 1.5.0)
+Este repositorio utiliza Terraform para aprovisionar un ecosistema n8n robusto y listo para producción en Google Cloud Platform. La arquitectura se compone de los siguientes elementos clave:
 
-## 🚀 Deployment
+- **Google Cloud Run**: Sirve la aplicación n8n, configurada con una instancia mínima para garantizar una respuesta inmediata y eliminar los "arranques en frío" (cold starts).
+- **Google Cloud SQL**: Una instancia PostgreSQL (`db-f1-micro`) actúa como el backend de base de datos persistente para todos los workflows, credenciales y ejecuciones de n8n.
+- **Google Secret Manager**: Almacena de forma segura todas las credenciales sensibles, como la clave de encriptación de n8n y las contraseñas de la base de datos.
+- **IAM y Service Accounts**: Se configura una cuenta de servicio dedicada para n8n con los permisos mínimos necesarios para acceder a la base de datos y a los secretos, siguiendo el principio de mínimo privilegio.
 
-### 1. Configurar variables de entorno
+---
+
+## 🚀 Despliegue: Del Código a la Nube
+
+El proceso de despliegue está totalmente automatizado con Terraform. Se divide en fases claras.
+
+**Tiempo total estimado: 10-15 minutos.**
+
+*La mayor parte de este tiempo es consumida por Google Cloud al aprovisionar la instancia de Cloud SQL por primera vez. Es una espera única durante la creación inicial.*
+
+### Fase 1: Configuración del Entorno Local (1 minuto)
+
+Antes de ejecutar Terraform, necesitamos configurar las variables de entorno que apuntarán a tu proyecto de GCP.
 
 ```bash
+# Navega al directorio del proyecto
 cd n8n-gcp-tf
 
 # Reemplaza con tu PROJECT_ID de GCP
@@ -21,68 +34,81 @@ export TF_VAR_project_id="tu-proyecto-gcp"
 export TF_VAR_region="us-central1"
 ```
 
-### 2. Autenticar en GCP
+### Fase 2: Autenticación con GCP (1 minuto)
+
+Terraform actuará en tu nombre, por lo que necesita autenticarse con tus credenciales de `gcloud`.
 
 ```bash
-# Login en GCP
+# Inicia sesión en tu cuenta de Google
 gcloud auth login
 gcloud auth application-default login
 
-# Configurar proyecto
+# Establece tu proyecto como el objetivo por defecto
 gcloud config set project $TF_VAR_project_id
-
-# Verificar billing habilitado
-gcloud billing projects describe $TF_VAR_project_id --format="value(billingAccountName)"
 ```
 
-### 3. Inicializar y aplicar Terraform
+### Fase 3: Aprovisionamiento de la Infraestructura con Terraform (8-13 minutos)
+
+Esta es la fase principal. Terraform leerá todos los archivos `.tf`, entenderá la arquitectura completa y la construirá en GCP.
 
 ```bash
-# Inicializar Terraform
+# 1. Inicializar Terraform
+#    Descarga los plugins necesarios (providers) para interactuar con GCP.
 terraform init
 
-# Revisar el plan (revisa qué se va a crear)
+# 2. Planificar los Cambios (Opcional pero recomendado)
+#    Muestra una simulación de los recursos que se crearán, sin aplicar nada aún.
+#    Es el paso ideal para verificar que todo es correcto.
 terraform plan
 
-# Aplicar cambios
+# 3. Aplicar el Plan y Construir
+#    Este es el comando que inicia la construcción. Terraform te mostrará el plan
+#    de nuevo y te pedirá una confirmación final.
 terraform apply
 
-# Confirmar con 'yes'
+#    Escribe "yes" cuando se te solicite para comenzar.
 ```
 
-**Tiempo estimado de deployment: 5-10 minutos**
+**¿Qué está sucediendo durante el `apply`?**
+1.  **Habilitación de APIs:** Terraform se asegura de que las APIs de Cloud Run, Cloud SQL y Secret Manager estén activas en tu proyecto.
+2.  **Creación de la Instancia SQL:** Se aprovisiona el servidor PostgreSQL. **Esta es la parte más tardada.**
+3.  **Creación de Secretos:** Se generan y almacenan las contraseñas y claves en Secret Manager.
+4.  **Despliegue de n8n:** Se configura y despliega el servicio de Cloud Run, conectándolo de forma segura a la base de datos y a los secretos.
 
-### 4. Obtener credenciales de acceso
+### Fase 4: Acceso a tu Instancia de n8n (1 minuto)
 
-Después del `terraform apply`, verás outputs como:
+Una vez que el `apply` termina, Terraform mostrará las URLs de acceso y las credenciales iniciales.
 
-```bash
-run_url = "https://n8n-xxxxx-uc.a.run.app"
-basic_auth_user = "ed"
-```
+1.  **Obtén la URL y el Usuario:**
+    La salida de Terraform mostrará algo como:
+    ```
+    run_url = "https://n8n-xxxxx-uc.a.run.app"
+    basic_auth_user = "ed"
+    ```
 
-**Para obtener la contraseña de Basic Auth:**
+2.  **Obtén la Contraseña de Acceso:**
+    La contraseña se almacena en Secret Manager. Obtenla con este comando:
+    ```bash
+    gcloud secrets versions access latest --secret="N8N_BASIC_AUTH_PASSWORD"
+    ```
 
-```bash
-# Obtener la contraseña
-gcloud secrets versions access latest --secret="N8N_BASIC_AUTH_PASSWORD"
-```
+3.  **Accede y Configura:**
+    Abre la `run_url` en tu navegador e ingresa con el usuario y la contraseña obtenidos. El primer paso será crear tu cuenta de administrador de n8n.
 
-### 5. Acceder a n8n
+---
 
-1. Abre la URL de `run_url` en tu navegador
-2. Ingresa:
-   - Usuario: `ed`
-   - Contraseña: (la que obtuviste del comando anterior)
-3. Configura tu usuario administrador inicial
+## 💰 Arquitectura de Costos (Estimación Mensual)
 
-## 💰 Costo Estimado
+Esta configuración mantiene una instancia activa 24/7 para un rendimiento óptimo. Los costos se basan en la región `us-central1` y pueden variar.
 
-- **Mensual:** $264-474 MXN (~$15-27 USD)
-- **Por componente:**
-  - Cloud Run (uso): $140-263 MXN
-  - Cloud SQL: $153-210 MXN
-  - Otros: $1-35 MXN
+| Componente                    | Especificación                               | Costo Estimado (USD) | Justificación                                                               |
+| ----------------------------- | ---------------------------------------------- | -------------------- | --------------------------------------------------------------------------- |
+| **Cloud Run Service**         | 1 instancia (1 vCPU, 512 MiB RAM) 24/7         | ~$66.35              | Costo principal por mantener la instancia siempre activa para respuesta inmediata. |
+| **Cloud SQL Instance**        | `db-f1-micro`, 10 GB SSD, Backups habilitados | ~$11.58              | Servidor de base de datos PostgreSQL para persistencia de datos.            |
+| **Servicios de Soporte**      | Secret Manager, Logging, Artifact Registry   | ~$0.00               | El uso proyectado se encuentra dentro del generoso free tier de GCP.        |
+| **Network Egress**            | Tráfico de salida de Cloud Run                 | <$1.00               | Variable según el uso; típicamente bajo para desarrollo y pruebas.        |
+| **Total Estimado**            |                                                | **~$78 USD / mes**   | **~1,326 MXN / mes** (a un tipo de cambio de 17.00)                        |
+
 
 ## 📂 Estructura del Proyecto
 
@@ -102,11 +128,11 @@ n8n-gcp-tf/
 ### Variables principales:
 
 - `project_id`: ID de tu proyecto GCP
-- `region`: Región de despliegue (default: us-central1)
-- `min_instances`: Instancias mínimas (default: 0 - ahorro)
-- `max_instances`: Instancias máximas (default: 1)
-- `db_tier`: Tier de Cloud SQL (default: db-f1-micro)
-- `timezone`: Zona horaria (default: America/Mexico_City)
+- `region`: Región de despliegue (default: `us-central1`)
+- `min_instances`: Instancias mínimas (default: `1` - para alta disponibilidad)
+- `max_instances`: Instancias máximas (default: `1`)
+- `db_tier`: Tier de Cloud SQL (default: `db-f1-micro`)
+- `timezone`: Zona horaria (default: `America/Mexico_City`)
 
 ### Actualizar N8N_PUBLIC_URL (recomendado)
 
@@ -145,10 +171,6 @@ terraform destroy
 ```
 
 ## 🐛 Troubleshooting
-
-### Cold start tardado
-
-Si `min_instances=0`, el primer request después de inactividad puede tardar 10-30 segundos. Esto es normal y es el trade-off por ahorrar costos.
 
 ### Error de permisos
 
