@@ -6,38 +6,32 @@ Este repositorio contiene un template de Terraform para desplegar una **fundaci�
 
 Este repositorio utiliza Terraform para aprovisionar un ecosistema n8n robusto y listo para producción en GCP. La arquitectura se adhiere a las mejores prácticas de seguridad y gestión declarativa (Infraestructura como Código).
 
-```mermaid
-graph TD
-    subgraph "Google Cloud Project (agents-workforce)"
-        subgraph "IAM"
-            SA(Service Account <br> n8n-sa)
-        end
-
-        subgraph "Compute"
-             CR(Cloud Run <br> n8n Service)
-        end
-
-        subgraph "Database"
-            SQL(Cloud SQL <br> PostgreSQL Instance)
-        end
-
-        subgraph "Security"
-            SM(Secret Manager <br> DB Pass, API Keys, etc.)
-        end
-
-        CR -- "1. Reads secrets using" --> SA
-        SA -- "2. Has role: secretAccessor" --> SM
-        CR -- "3. Connects via Cloud SQL Connector using" --> SA
-        SA -- "4. Has role: cloudsql.client" --> SQL
-    end
-
-    User[Usuario Final] -- "HTTPS (Acceso a n8n UI)" --> CR
-    Developer[Desarrollador] -- "Cloud SQL Auth Proxy (Acceso a DB)" --> SQL
-
-    style CR fill:#4285F4,stroke:#333,stroke-width:2px,color:#fff
-    style SQL fill:#34A853,stroke:#333,stroke-width:2px,color:#fff
-    style SM fill:#FBBC05,stroke:#333,stroke-width:2px,color:#000
-    style SA fill:#EA4335,stroke:#333,stroke-width:2px,color:#fff
+```text
+                 +------------------+
+    (Usuario) -->|     INTERNET     |--> (HTTPS) --> [ Cloud Run: n8n Service ]
+                 +------------------+                    |
+                                                         | (1) Autentica usando
+                                                         v
+    +----------------------------------------------------v---------------------------------------------------+
+    | GCP Project: agents-workforce                                                                         |
+    |                                                                                                       |
+    |                               +---------------------------+                                           |
+    |                               |  IAM: Service Account     |                                           |
+    |                               |         (n8n-sa)          |                                           |
+    |                               +-------------+-------------+                                           |
+    |                                             |                                                         |
+    |           +---------------------------------+---------------------------------+                       |
+    |           | (2) Accede a Secretos           | (3) Conecta a Base de Datos       |                       |
+    |           v                                 v                                 v                       |
+    | +---------------------+           +---------------------+           +--------------------------+      |
+    | |   Secret Manager    |           |   Cloud SQL         |           | ... otros servicios GCP  |      |
+    | | (Passwords, Keys)   |           |   (PostgreSQL DB)   |           | (Logging, Monitoring)    |      |
+    | +---------------------+           +---------------------+           +--------------------------+      |
+    |                                             ^                                                         |
+    |                                             |                                                         |
+    |  (Developer) ----> [Cloud SQL Auth Proxy] --+ (Conexión segura y autenticada)                         |
+    |                                                                                                       |
+    +-------------------------------------------------------------------------------------------------------+
 ```
 
 - **`Google Cloud Run`**: Sirve la aplicación n8n. Se configura con `min_instances = 1` para garantizar una operación `always-on`, eliminando la latencia de "arranque en frío" y asegurando disponibilidad inmediata.
