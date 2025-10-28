@@ -1,6 +1,6 @@
-# n8n GCP Deployment - Configuración de Alta Disponibilidad
+# n8n GCP Platform Accelerator
 
-Este proyecto despliega n8n en Google Cloud Platform con una configuración optimizada para respuesta inmediata y alta disponibilidad, eliminando los "cold starts".
+Este repositorio contiene un template de Terraform para desplegar una **fundación de plataforma** n8n en GCP. El diseño está enfocado en seguridad, rendimiento y gestión 100% declarativa, sirviendo como un acelerador para equipos que buscan integrar n8n de forma nativa en su ecosistema Cloud.
 
 ## 🏗️ Arquitectura del Sistema
 
@@ -220,6 +220,23 @@ Para problemas o preguntas, consulta:
 - [Documentación de n8n](https://docs.n8n.io/)
 - [Documentación de Cloud Run](https://cloud.google.com/run/docs)
 - [Foro de n8n](https://community.n8n.io/)
+
+## ⚖️ Análisis Arquitectónico: Self-Hosted vs. n8n Enterprise Cloud
+
+La decisión de autogestionar n8n en GCP en lugar de utilizar la oferta SaaS de n8n Cloud es una elección de diseño deliberada, centrada en el control y la integración profunda. Este enfoque se alinea con una filosofía de "construir" (build) en lugar de "comprar" (buy) cuando el control granular de la plataforma es un requisito clave.
+
+| Criterio | Self-Hosted en GCP (Este Template) | n8n Enterprise Cloud (SaaS) |
+| :--- | :--- | :--- |
+| **Control y Customización** | **Total.** Control absoluto sobre el entorno de ejecución, redes (VPC), IAM y la integración nativa con el ecosistema GCP. | **Limitado.** La infraestructura está abstraída. Se obtiene una plataforma funcional sin control sobre los recursos subyacentes. |
+| **Costo Operativo** | **Transparente y Basado en Consumo.** Pagas directamente a GCP por los recursos que consumes. | **Basado en Tiers y Características.** Un precio fijo que encapsula infraestructura, software y soporte. |
+| **Overhead de Mantenimiento** | **Tu Responsabilidad.** Actualizaciones, monitoreo y gestión de la plataforma recaen en tu equipo. | **Cero.** El SRE de n8n gestiona la disponibilidad, actualizaciones y parches. |
+| **Seguridad y Cumplimiento** | **Tu Responsabilidad.** Permite implementar arquitecturas de seguridad a medida, pero la configuración y el mantenimiento son tu responsabilidad. | **Responsabilidad del Proveedor.** n8n es responsable de la seguridad de la plataforma y el cumplimiento de normativas. |
+| **Características y Soporte** | **Comunitario.** Utiliza la versión de código abierto. El soporte proviene de la comunidad, sin SLA. | **Premium.** Acceso a características empresariales (SSO, RBAC), soporte técnico dedicado y un SLA garantizado. |
+
+### Veredicto
+
+Este **acelerador** es ideal para arquitectos y equipos de plataforma que requieren una integración profunda de n8n en su ecosistema GCP, necesitan control granular sobre la seguridad y operan bajo un modelo de IaC. Para equipos que buscan una solución "llave en mano" sin carga operativa, n8n Enterprise Cloud es la alternativa recomendada.
+
 
 ## Troubleshooting
 
