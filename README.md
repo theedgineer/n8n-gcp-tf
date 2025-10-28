@@ -235,12 +235,43 @@ Las APIs se habilitan automáticamente, pero pueden tardar unos minutos. Espera 
 - **Secret Manager**: Credenciales almacenadas de forma segura
 - **IAM**: Permisos mínimos necesarios
 
-## 📚 Próximos Pasos
+## ⚙️ Gestión del Ciclo de Vida de la Plataforma
 
-1. Configurar integraciones (Gmail, Gemini API, etc.)
-2. Crear tus primeros workflows
-3. Configurar tu primer agente (Janitor)
-4. Monitorear costos en GCP Console
+Una vez desplegada, la gestión de la plataforma sigue los principios de IaC. A continuación, se presentan los patrones operativos más comunes.
+
+### Actualización de la Versión de n8n
+
+Para actualizar la versión de n8n, modifica la etiqueta de la imagen en `variables.tf` y aplica el cambio.
+
+1.  **En `variables.tf`:**
+    ```terraform
+    variable "n8n_image" {
+      description = "Imagen de n8n"
+      type        = string
+      default     = "docker.io/n8nio/n8n:latest" # Cambiar a, ej: "docker.io/n8nio/n8n:1.45.1"
+    }
+    ```
+2.  **Aplica el cambio:**
+    ```bash
+    terraform apply
+    ```
+    Cloud Run realizará un despliegue "rolling update" sin tiempo de inactividad.
+
+### Escalado de la Plataforma
+
+Para escalar los recursos, ajusta las variables correspondientes en `variables.tf` y aplica los cambios.
+
+*   **Escalado de Cómputo:** Modifica `min_instances` o `max_instances`.
+*   **Escalado de Base de Datos:** Modifica el `db_tier` a una instancia superior (ej. `db-g1-small`).
+
+### Destrucción del Entorno
+
+Para eliminar completamente todos los recursos gestionados por este proyecto, utiliza el comando `destroy`.
+
+```bash
+# Este comando es irreversible y eliminará la base de datos y todos los datos asociados.
+terraform destroy
+```
 
 ## 📞 Soporte
 
