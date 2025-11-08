@@ -11,8 +11,8 @@ resource "random_password" "basic_auth_pass" {
 
 # Secrets
 resource "google_secret_manager_secret" "n8n_encryption_key" {
-  secret_id  = "N8N_ENCRYPTION_KEY"
-  
+  secret_id = "N8N_ENCRYPTION_KEY"
+
   replication {
     user_managed {
       replicas {
@@ -29,7 +29,7 @@ resource "google_secret_manager_secret_version" "n8n_encryption_key_v" {
 
 resource "google_secret_manager_secret" "db_password" {
   secret_id = "N8N_DB_PASSWORD"
-  
+
   replication {
     user_managed {
       replicas {
@@ -46,7 +46,7 @@ resource "google_secret_manager_secret_version" "db_password_v" {
 
 resource "google_secret_manager_secret" "basic_auth_user" {
   secret_id = "N8N_BASIC_AUTH_USER"
-  
+
   replication {
     user_managed {
       replicas {
@@ -63,7 +63,7 @@ resource "google_secret_manager_secret_version" "basic_auth_user_v" {
 
 resource "google_secret_manager_secret" "basic_auth_pass" {
   secret_id = "N8N_BASIC_AUTH_PASSWORD"
-  
+
   replication {
     user_managed {
       replicas {

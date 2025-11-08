@@ -45,3 +45,27 @@ variable "max_instances" {
   default     = 1
 }
 
+variable "webhook_url" {
+  description = "URL pública de n8n utilizada para webhooks y editor"
+  type        = string
+  default     = "https://n8n.edgardo.com.mx/"
+}
+
+variable "n8n_user_management_disabled" {
+  description = "Deshabilita la pantalla de creación de usuarios adicionales en n8n"
+  type        = bool
+  default     = true
+}
+
+variable "vpc_connector_name" {
+  description = "Nombre del Serverless VPC Access Connector para Cloud Run"
+  type        = string
+  default     = "n8n-connector"
+}
+
+variable "vpc_connector_cidr" {
+  description = "Bloque CIDR reservado para el Serverless VPC Access Connector"
+  type        = string
+  default     = "10.8.0.0/28"
+}
+

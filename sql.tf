@@ -17,11 +17,8 @@ resource "google_sql_database_instance" "pg" {
       point_in_time_recovery_enabled = true
     }
     ip_configuration {
-      ipv4_enabled = true
-      authorized_networks {
-        name  = "all"
-        value = "0.0.0.0/0"
-      }
+      ipv4_enabled    = false
+      private_network = data.google_compute_network.selected.self_link
     }
     data_cache_config {
       data_cache_enabled = false

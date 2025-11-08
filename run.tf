@@ -10,12 +10,13 @@ resource "google_cloud_run_service" "n8n" {
 
   template {
     spec {
-      service_account_name = google_service_account.n8n.email
+      service_account_name  = google_service_account.n8n.email
       container_concurrency = 50
-      
+      timeout_seconds       = 600
+
       containers {
         image = var.n8n_image
-        
+
         ports {
           container_port = 5678
         }
@@ -24,6 +25,10 @@ resource "google_cloud_run_service" "n8n" {
         env {
           name  = "N8N_PORT"
           value = "5678"
+        }
+        env {
+          name  = "N8N_HOST"
+          value = "0.0.0.0"
         }
         env {
           name  = "N8N_PROTOCOL"
@@ -49,6 +54,14 @@ resource "google_cloud_run_service" "n8n" {
           name  = "EXECUTIONS_MODE"
           value = "regular"
         }
+        env {
+          name  = "N8N_USER_MANAGEMENT_DISABLED"
+          value = var.n8n_user_management_disabled ? "true" : "false"
+        }
+        env {
+          name  = "WEBHOOK_URL"
+          value = var.webhook_url
+        }
 
         # DB config
         env {
@@ -61,7 +74,7 @@ resource "google_cloud_run_service" "n8n" {
         }
         env {
           name  = "DB_POSTGRESDB_HOST"
-          value = google_sql_database_instance.pg.public_ip_address
+          value = "/cloudsql/${var.project_id}:${var.region}:${google_sql_database_instance.pg.name}"
         }
         env {
           name  = "DB_POSTGRESDB_PORT"
@@ -79,7 +92,8 @@ resource "google_cloud_run_service" "n8n" {
 
         # Secrets
         env {
-          name = "N8N_ENCRYPTION_KEY"
+          name  = "N8N_ENCRYPTION_KEY"
+          value = ""
           value_from {
             secret_key_ref {
               name = google_secret_manager_secret.n8n_encryption_key.secret_id
@@ -88,7 +102,8 @@ resource "google_cloud_run_service" "n8n" {
           }
         }
         env {
-          name = "DB_POSTGRESDB_PASSWORD"
+          name  = "DB_POSTGRESDB_PASSWORD"
+          value = ""
           value_from {
             secret_key_ref {
               name = google_secret_manager_secret.db_password.secret_id
@@ -97,7 +112,8 @@ resource "google_cloud_run_service" "n8n" {
           }
         }
         env {
-          name = "N8N_BASIC_AUTH_USER"
+          name  = "N8N_BASIC_AUTH_USER"
+          value = ""
           value_from {
             secret_key_ref {
               name = google_secret_manager_secret.basic_auth_user.secret_id
@@ -106,7 +122,8 @@ resource "google_cloud_run_service" "n8n" {
           }
         }
         env {
-          name = "N8N_BASIC_AUTH_PASSWORD"
+          name  = "N8N_BASIC_AUTH_PASSWORD"
+          value = ""
           value_from {
             secret_key_ref {
               name = google_secret_manager_secret.basic_auth_pass.secret_id
@@ -117,15 +134,15 @@ resource "google_cloud_run_service" "n8n" {
 
         resources {
           limits = {
-            memory = "512Mi"
-            cpu    = "1"
+            memory = "2Gi"
+            cpu    = "1000m"
           }
         }
 
         startup_probe {
-          period_seconds       = 240
-          failure_threshold    = 1
-          timeout_seconds      = 240
+          period_seconds    = 240
+          failure_threshold = 1
+          timeout_seconds   = 240
           tcp_socket {
             port = 5678
           }
@@ -135,8 +152,11 @@ resource "google_cloud_run_service" "n8n" {
 
     metadata {
       annotations = {
-        # Conector Cloud SQL
-        "run.googleapis.com/sql-connection-instance" = data.google_sql_database_instance.pg.connection_name
+        # Conectividad
+        "run.googleapis.com/cloudsql-instances"   = "${var.project_id}:${var.region}:${google_sql_database_instance.pg.name}"
+        "run.googleapis.com/startup-cpu-boost"    = "true"
+        "run.googleapis.com/vpc-access-connector" = google_vpc_access_connector.n8n.name
+        "run.googleapis.com/vpc-access-egress"    = "private-ranges-only"
         # Escalado
         "autoscaling.knative.dev/minScale" = var.min_instances
         "autoscaling.knative.dev/maxScale" = var.max_instances
@@ -148,13 +168,14 @@ resource "google_cloud_run_service" "n8n" {
     percent         = 100
     latest_revision = true
   }
-  
+
   autogenerate_revision_name = true
 
   depends_on = [
     google_project_service.services,
     google_secret_manager_secret_iam_member.key_access,
-    google_sql_user.user
+    google_sql_user.user,
+    google_vpc_access_connector.n8n
   ]
 }
 

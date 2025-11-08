@@ -10,7 +10,7 @@ Este repositorio utiliza Terraform para aprovisionar un ecosistema n8n robusto y
                  +------------------+
     (Usuario) -->|     INTERNET     |--> (HTTPS) --> [ Cloud Run: n8n Service ]
                  +------------------+                    |
-                                                         | (1) Autentica usando
+                                                         | (1) Autentica usando SA + Secret Manager
                                                          v
     +----------------------------------------------------v---------------------------------------------------+
     | GCP Project: agents-workforce                                                                         |
@@ -19,25 +19,26 @@ Este repositorio utiliza Terraform para aprovisionar un ecosistema n8n robusto y
     |                               |  IAM: Service Account     |                                           |
     |                               |         (n8n-sa)          |                                           |
     |                               +-------------+-------------+                                           |
-    |                                             |                                                         |
+    |                                             |     (4) IAM mínimo                                      |
     |           +---------------------------------+---------------------------------+                       |
     |           | (2) Accede a Secretos           | (3) Conecta a Base de Datos       |                       |
     |           v                                 v                                 v                       |
     | +---------------------+           +---------------------+           +--------------------------+      |
-    | |   Secret Manager    |           |   Cloud SQL         |           | ... otros servicios GCP  |      |
-    | | (Passwords, Keys)   |           |   (PostgreSQL DB)   |           | (Logging, Monitoring)    |      |
-    | +---------------------+           +---------------------+           +--------------------------+      |
-    |                                             ^                                                         |
-    |                                             |                                                         |
-    |  (Developer) ----> [Cloud SQL Auth Proxy] --+ (Conexión segura y autenticada)                         |
-    |                                                                                                       |
+    | |   Secret Manager    |           |   Cloud SQL         |           |   Logging / Monitoring   |      |
+    | | (Passwords, Keys)   |           |   (Private IP)      |           |   Artifact Registry      |      |
+    | +---------------------+           +----------+----------+           +--------------------------+      |
+    |                                       ^  (Conector Serverless VPC)                                    |
+    |                                       |                                                               |
+    |  (Developer) ----> [Cloud SQL Auth Proxy]                                                             |
+    |                         (conexión administrativa TLS)                                                 |
     +-------------------------------------------------------------------------------------------------------+
 ```
 
-- **`Google Cloud Run`**: Sirve la aplicación n8n. Se configura con `min_instances = 1` para garantizar una operación `always-on`, eliminando la latencia de "arranque en frío" y asegurando disponibilidad inmediata.
-- **`Google Cloud SQL`**: Una instancia PostgreSQL (`db-f1-micro`) actúa como el backend de persistencia para workflows, credenciales y ejecuciones. El acceso está restringido, requiriendo el **Cloud SQL Auth Proxy** para conexiones externas.
+- **`Google Cloud Run`**: Sirve la aplicación n8n. Se configura con `min_instances = 1`, `timeout = 600s`, `startup_cpu_boost = true`, 1 vCPU y 2 GiB de RAM; escucha en el puerto 5678, el estándar de la imagen oficial, para maximizar velocidad de respuesta sin sacrificar cold starts controlados.
+- **`Google Cloud SQL`**: Instancia PostgreSQL (`db-f1-micro`) sin IP pública. El servicio se expone únicamente mediante una IP privada dentro de la VPC `default`; las conexiones externas deben pasar por el **Cloud SQL Auth Proxy**.
 - **`Google Secret Manager`**: Centraliza la gestión de todos los datos sensibles. Las contraseñas y claves de encriptación son generadas y rotadas en cada `terraform apply`, y el servicio n8n las consume dinámicamente.
-- **`IAM y Service Accounts`**: Se aprovisiona una Service Account dedicada (`n8n-sa`) con un conjunto de roles de mínimo privilegio, asegurando que el servicio solo acceda a los recursos indispensables (Cloud SQL, Secret Manager).
+- **`Serverless VPC Access`**: Conector dedicado (`n8n-connector`, CIDR `10.8.0.0/28`) que enruta el tráfico de Cloud Run hacia la IP privada de Cloud SQL sin abrir el perímetro público.
+- **`IAM y Service Accounts`**: Se aprovisiona una Service Account dedicada (`n8n-sa`) con un conjunto mínimo de roles (`cloudsql.client`, `secretmanager.secretAccessor`, `logging.logWriter`) para operar bajo least privilege.
 
 ## ✨ Principios de Diseño (Design Principles)
 
@@ -46,7 +47,7 @@ Este proyecto no es solo un conjunto de scripts, sino una implementación de pri
 1.  **Seguridad por Diseño (Security by Design):**
     *   **Cero Credenciales Hardcodeadas:** Todos los secretos son gestionados fuera del código.
     *   **Mínimo Privilegio (Least Privilege):** La Service Account de n8n solo tiene los permisos `roles/cloudsql.client` y `roles/secretmanager.secretAccessor`.
-    *   **Aislamiento de Red:** La base de datos carece de IP pública y no es directamente accesible desde internet.
+    *   **Aislamiento de Red:** Sin IP pública en la base de datos; el tráfico productivo viaja por el conector serverless y la red privada.
 
 2.  **Gestión 100% Declarativa (Infrastructure as Code):**
     *   El estado completo de la infraestructura está definido en el código Terraform. No se requieren pasos manuales en la consola de GCP.
@@ -147,11 +148,11 @@ Esta configuración mantiene una instancia activa 24/7 para un rendimiento ópti
 
 | Componente                    | Especificación                               | Costo Estimado (USD) | Justificación                                                               |
 | ----------------------------- | ---------------------------------------------- | -------------------- | --------------------------------------------------------------------------- |
-| **Cloud Run Service**         | 1 instancia (1 vCPU, 512 MiB RAM) 24/7         | ~$66.35              | Costo principal por mantener la instancia siempre activa para respuesta inmediata. |
-| **Cloud SQL Instance**        | `db-f1-micro`, 10 GB SSD, Backups habilitados | ~$11.58              | Servidor de base de datos PostgreSQL para persistencia de datos.            |
+| **Cloud Run Service**         | 1 instancia (1 vCPU, 2 GiB RAM) 24/7           | ~$90.00              | n8n en Cloud Run con CPU boost y RAM ampliada para ETLs y cold starts controlados. |
+| **Cloud SQL Instance**        | `db-f1-micro`, 10 GB SSD, Backups habilitados | ~$11.58              | Servidor PostgreSQL privado con PITR habilitado.                            |
 | **Servicios de Soporte**      | Secret Manager, Logging, Artifact Registry   | ~$0.00               | El uso proyectado se encuentra dentro del generoso free tier de GCP.        |
 | **Network Egress**            | Tráfico de salida de Cloud Run                 | <$1.00               | Variable según el uso; típicamente bajo para desarrollo y pruebas.        |
-| **Total Estimado**            |                                                | **~$78 USD / mes**   | **~1,326 MXN / mes** (a un tipo de cambio de 17.00)                        |
+| **Total Estimado**            |                                                | **~$102 USD / mes**  | **~1,734 MXN / mes** (tipo de cambio 17.00 MXN/USD).                       |
 
 
 ## 📂 Estructura del Proyecto
@@ -177,6 +178,9 @@ n8n-gcp-tf/
 - `max_instances`: Instancias máximas (default: `1`)
 - `db_tier`: Tier de Cloud SQL (default: `db-f1-micro`)
 - `timezone`: Zona horaria (default: `America/Mexico_City`)
+- `webhook_url`: URL externa a la que n8n expone editor y webhooks (`https://n8n.edgardo.com.mx/` por defecto)
+- `n8n_user_management_disabled`: Desactiva la UI de creación de usuarios adicionales (`true` por defecto)
+- `vpc_connector_name` / `vpc_connector_cidr`: Parámetros del Serverless VPC Access connector que enruta Cloud Run hacia la IP privada de Cloud SQL
 
 ### Actualizar N8N_PUBLIC_URL (recomendado)
 
