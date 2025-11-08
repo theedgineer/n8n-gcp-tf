@@ -1,16 +1,16 @@
 # n8n GCP Platform Accelerator
 
-Este repositorio contiene un template de Terraform para desplegar una **fundación de plataforma** n8n en GCP. El diseño está enfocado en seguridad, rendimiento y gestión 100% declarativa, sirviendo como un acelerador para equipos que buscan integrar n8n de forma nativa en su ecosistema Cloud.
+This repository is a Terraform accelerator for deploying **enterprise-grade n8n** on Google Cloud Platform. It is engineered for security-first, always-on operation with full Infrastructure-as-Code governance—ideal for platform teams that want n8n living natively inside their cloud footprint.
 
-## 🏗️ Arquitectura del Sistema
+## 🏗️ System Architecture
 
-Este repositorio utiliza Terraform para aprovisionar un ecosistema n8n robusto y listo para producción en GCP. La arquitectura se adhiere a las mejores prácticas de seguridad y gestión declarativa (Infraestructura como Código).
+Terraform orchestrates the entire surface: Cloud Run, Cloud SQL (private IP), Secret Manager, IAM, and the Serverless VPC connector. The platform follows isolation and least-privilege patterns end to end.
 
 ```text
                  +------------------+
-    (Usuario) -->|     INTERNET     |--> (HTTPS) --> [ Cloud Run: n8n Service ]
+    (User)   --->|     INTERNET     |---> (HTTPS) ---> [ Cloud Run: n8n Service ]
                  +------------------+                    |
-                                                         | (1) Autentica usando SA + Secret Manager
+                                                         | (1) Auth via SA + Secret Manager
                                                          v
     +----------------------------------------------------v---------------------------------------------------+
     | GCP Project: agents-workforce                                                                         |
@@ -19,172 +19,132 @@ Este repositorio utiliza Terraform para aprovisionar un ecosistema n8n robusto y
     |                               |  IAM: Service Account     |                                           |
     |                               |         (n8n-sa)          |                                           |
     |                               +-------------+-------------+                                           |
-    |                                             |     (4) IAM mínimo                                      |
+    |                                             |     (4) Least Privilege                                 |
     |           +---------------------------------+---------------------------------+                       |
-    |           | (2) Accede a Secretos           | (3) Conecta a Base de Datos       |                       |
+    |           | (2) Access Secrets              | (3) Reach Private Database       |                       |
     |           v                                 v                                 v                       |
     | +---------------------+           +---------------------+           +--------------------------+      |
     | |   Secret Manager    |           |   Cloud SQL         |           |   Logging / Monitoring   |      |
     | | (Passwords, Keys)   |           |   (Private IP)      |           |   Artifact Registry      |      |
     | +---------------------+           +----------+----------+           +--------------------------+      |
-    |                                       ^  (Conector Serverless VPC)                                    |
-    |                                       |                                                               |
-    |  (Developer) ----> [Cloud SQL Auth Proxy]                                                             |
-    |                         (conexión administrativa TLS)                                                 |
+    |                                       ^  Serverless VPC Connector                                   |
+    |                                       |                                                             |
+    |  (Engineer) --> [Cloud SQL Auth Proxy] (TLS admin path)                                             |
     +-------------------------------------------------------------------------------------------------------+
 ```
 
-- **`Google Cloud Run`**: Sirve la aplicación n8n. Se configura con `min_instances = 1`, `timeout = 600s`, `startup_cpu_boost = true`, 1 vCPU y 2 GiB de RAM; escucha en el puerto 5678, el estándar de la imagen oficial, para maximizar velocidad de respuesta sin sacrificar cold starts controlados.
-- **`Google Cloud SQL`**: Instancia PostgreSQL (`db-f1-micro`) sin IP pública. El servicio se expone únicamente mediante una IP privada dentro de la VPC `default`; las conexiones externas deben pasar por el **Cloud SQL Auth Proxy**.
-- **`Google Secret Manager`**: Centraliza la gestión de todos los datos sensibles. Las contraseñas y claves de encriptación son generadas y rotadas en cada `terraform apply`, y el servicio n8n las consume dinámicamente.
-- **`Serverless VPC Access`**: Conector dedicado (`n8n-connector`, CIDR `10.8.0.0/28`) que enruta el tráfico de Cloud Run hacia la IP privada de Cloud SQL sin abrir el perímetro público.
-- **`IAM y Service Accounts`**: Se aprovisiona una Service Account dedicada (`n8n-sa`) con un conjunto mínimo de roles (`cloudsql.client`, `secretmanager.secretAccessor`, `logging.logWriter`) para operar bajo least privilege.
+- **`Google Cloud Run`**: Hosts n8n with `min_instances = 1`, `timeout = 600s`, `startup_cpu_boost = true`, 1 vCPU and 2 GiB RAM. The container listens on port 5678 (official image default).
+- **`Google Cloud SQL`**: PostgreSQL (`db-f1-micro`) with *no public IP*. Only reachable through a private address inside the `default` VPC; external admins connect via Cloud SQL Auth Proxy.
+- **`Google Secret Manager`**: Owns every secret—passwords, encryption keys, Basic Auth credentials—fetched dynamically at runtime.
+- **`Serverless VPC Access`**: Dedicated connector (`n8n-connector`, CIDR `10.8.0.0/28`) that routes Cloud Run traffic into the private subnet without exposing Cloud SQL publicly.
+- **`IAM & Service Accounts`**: The `n8n-sa` account carries only `cloudsql.client`, `secretmanager.secretAccessor`, and `logging.logWriter`.
 
-## ✨ Principios de Diseño (Design Principles)
+## ✨ Design Principles
 
-Este proyecto no es solo un conjunto de scripts, sino una implementación de principios de plataforma reutilizables:
+This repository encodes platform-grade patterns—not one-off scripts.
 
-1.  **Seguridad por Diseño (Security by Design):**
-    *   **Cero Credenciales Hardcodeadas:** Todos los secretos son gestionados fuera del código.
-    *   **Mínimo Privilegio (Least Privilege):** La Service Account de n8n solo tiene los permisos `roles/cloudsql.client` y `roles/secretmanager.secretAccessor`.
-    *   **Aislamiento de Red:** Sin IP pública en la base de datos; el tráfico productivo viaja por el conector serverless y la red privada.
+1. **Security by Design**
+   - **No hardcoded credentials**: Every secret lives in Secret Manager.
+   - **Least Privilege**: Minimal IAM surface for runtime operations.
+   - **Network Isolation**: Database uses private IP only; all productive traffic flows through the serverless connector.
 
-2.  **Gestión 100% Declarativa (Infrastructure as Code):**
-    *   El estado completo de la infraestructura está definido en el código Terraform. No se requieren pasos manuales en la consola de GCP.
-    *   El sistema es reproducible, versionable y auditable.
+2. **Infrastructure as Code**
+   - Everything is declared in Terraform—repeatable, auditable, versioned.
+   - No console-driven drift required for future changes.
 
-3.  **Modularidad y Reutilización:**
-    *   La separación lógica en archivos (`run.tf`, `sql.tf`, `secrets.tf`) permite que este repositorio funcione como un "acelerador" o un *template de plataforma* para futuros despliegues de servicios similares.
+3. **Modularity & Reuse**
+   - Logical separation (`run.tf`, `sql.tf`, `network.tf`, `secrets.tf`) makes this codebase a drop-in accelerator for other teams.
 
 ---
 
-## 🚀 Despliegue: Del Código a la Nube
+## 🚀 Deployment Workflow
 
-El proceso de despliegue está totalmente automatizado con Terraform. Se divide en fases claras.
+Provisioning is fully automated with Terraform. Expect ~10–15 minutes on first run (Cloud SQL boot dominates).
 
-**Tiempo total estimado: 10-15 minutos.**
-
-*La mayor parte de este tiempo es consumida por Google Cloud al aprovisionar la instancia de Cloud SQL por primera vez. Es una espera única durante la creación inicial.*
-
-### Fase 1: Configuración del Entorno Local (1 minuto)
-
-Antes de ejecutar Terraform, necesitamos configurar las variables de entorno que apuntarán a tu proyecto de GCP.
+### 1. Prime your shell (≈1 min)
 
 ```bash
-# Navega al directorio del proyecto
 cd n8n-gcp-tf
 
-# Reemplaza con tu PROJECT_ID de GCP
-export TF_VAR_project_id="tu-proyecto-gcp"
+# Replace with your GCP project
+export TF_VAR_project_id="your-project-id"
 export TF_VAR_region="us-central1"
 ```
 
-### Fase 2: Autenticación con GCP (1 minuto)
-
-Terraform actuará en tu nombre, por lo que necesita autenticarse con tus credenciales de `gcloud`.
+### 2. Authenticate with Google Cloud (≈1 min)
 
 ```bash
-# Inicia sesión en tu cuenta de Google
 gcloud auth login
 gcloud auth application-default login
 
-# Establece tu proyecto como el objetivo por defecto
 gcloud config set project $TF_VAR_project_id
 ```
 
-### Fase 3: Aprovisionamiento de la Infraestructura con Terraform (8-13 minutos)
-
-Esta es la fase principal. Terraform leerá todos los archivos `.tf`, entenderá la arquitectura completa y la construirá en GCP.
+### 3. Provision the stack (≈8–13 min)
 
 ```bash
-# 1. Inicializar Terraform
-#    Descarga los plugins necesarios (providers) para interactuar con GCP.
 terraform init
-
-# 2. Planificar los Cambios (Opcional pero recomendado)
-#    Muestra una simulación de los recursos que se crearán, sin aplicar nada aún.
-#    Es el paso ideal para verificar que todo es correcto.
 terraform plan
-
-# 3. Aplicar el Plan y Construir
-#    Este es el comando que inicia la construcción. Terraform te mostrará el plan
-#    de nuevo y te pedirá una confirmación final.
 terraform apply
-
-#    Escribe "yes" cuando se te solicite para comenzar.
 ```
 
-**¿Qué está sucediendo durante el `apply`?**
-1.  **Habilitación de APIs:** Terraform se asegura de que las APIs de Cloud Run, Cloud SQL y Secret Manager estén activas en tu proyecto.
-2.  **Creación de la Instancia SQL:** Se aprovisiona el servidor PostgreSQL. **Esta es la parte más tardada.**
-3.  **Creación de Secretos:** Se generan y almacenan las contraseñas y claves en Secret Manager.
-4.  **Despliegue de n8n:** Se configura y despliega el servicio de Cloud Run, conectándolo de forma segura a la base de datos y a los secretos.
+**Deployment order under the hood**
+1. Required APIs are enabled.
+2. Cloud SQL (Postgres) provisions with PITR backups.
+3. Secrets are generated in Secret Manager.
+4. Cloud Run deploys the container, wires secrets, and enables startup probes plus the VPC connector.
 
-### Fase 4: Acceso a tu Instancia de n8n (1 minuto)
+### 4. Retrieve credentials & log in (≈1 min)
 
-Una vez que el `apply` termina, Terraform mostrará las URLs de acceso y las credenciales iniciales.
+Terraform outputs the Cloud Run URL and the Basic Auth user. Fetch the password from Secret Manager:
 
-1.  **Obtén la URL y el Usuario:**
-    La salida de Terraform mostrará algo como:
-    ```
-    run_url = "https://n8n-xxxxx-uc.a.run.app"
-    basic_auth_user = "ed"
-    ```
+```bash
+gcloud secrets versions access latest --secret="N8N_BASIC_AUTH_PASSWORD"
+```
 
-2.  **Obtén la Contraseña de Acceso:**
-    La contraseña se almacena en Secret Manager. Obtenla con este comando:
-    ```bash
-    gcloud secrets versions access latest --secret="N8N_BASIC_AUTH_PASSWORD"
-    ```
-
-3.  **Accede y Configura:**
-    Abre la `run_url` en tu navegador e ingresa con el usuario y la contraseña obtenidos. El primer paso será crear tu cuenta de administrador de n8n.
+Open the `run_url`, sign in, and complete the n8n bootstrap wizard.
 
 ---
 
-## 💰 Arquitectura de Costos (Estimación Mensual)
+## 💰 Cost Architecture (Estimated Monthly)
 
-Esta configuración mantiene una instancia activa 24/7 para un rendimiento óptimo. Los costos se basan en la región `us-central1` y pueden variar.
+| Component | Specification | Cost (USD) | Notes |
+| --------- | ------------- | ---------- | ----- |
+| **Cloud Run** | 1 instance (1 vCPU, 2 GiB RAM) 24/7 | ~$90.00 | Always-on workloads with CPU boost and higher RAM for ETL spikes. |
+| **Cloud SQL** | `db-f1-micro`, 10 GB SSD, PITR enabled | ~$11.58 | Managed Postgres with private IP only. |
+| **Support Services** | Secret Manager, Logging, Artifact Registry | ~$0.00 | Fits comfortably in the free tier under this profile. |
+| **Network Egress** | Outbound traffic from Cloud Run | <$1.00 | Usage dependent; negligible for dev/test. |
+| **Total** | | **~$102 USD / month** | ≈ 1,734 MXN @ 17 MXN/USD. |
 
-| Componente                    | Especificación                               | Costo Estimado (USD) | Justificación                                                               |
-| ----------------------------- | ---------------------------------------------- | -------------------- | --------------------------------------------------------------------------- |
-| **Cloud Run Service**         | 1 instancia (1 vCPU, 2 GiB RAM) 24/7           | ~$90.00              | n8n en Cloud Run con CPU boost y RAM ampliada para ETLs y cold starts controlados. |
-| **Cloud SQL Instance**        | `db-f1-micro`, 10 GB SSD, Backups habilitados | ~$11.58              | Servidor PostgreSQL privado con PITR habilitado.                            |
-| **Servicios de Soporte**      | Secret Manager, Logging, Artifact Registry   | ~$0.00               | El uso proyectado se encuentra dentro del generoso free tier de GCP.        |
-| **Network Egress**            | Tráfico de salida de Cloud Run                 | <$1.00               | Variable según el uso; típicamente bajo para desarrollo y pruebas.        |
-| **Total Estimado**            |                                                | **~$102 USD / mes**  | **~1,734 MXN / mes** (tipo de cambio 17.00 MXN/USD).                       |
-
-
-## 📂 Estructura del Proyecto
+## 📂 Project Structure
 
 ```
-n8n-gcp-tf/
-├── versions.tf       # Configuración de providers
-├── variables.tf      # Variables del proyecto
-├── main.tf          # APIs, Service Accounts, IAM
-├── sql.tf           # Cloud SQL PostgreSQL
-├── secrets.tf       # Secret Manager (credenciales)
-├── run.tf           # Cloud Run service (n8n)
-└── outputs.tf       # URLs y outputs
+├── versions.tf       # Provider pinning
+├── variables.tf      # User-configurable parameters
+├── main.tf           # Core IAM + API enablement
+├── sql.tf            # Cloud SQL (private IP, backups)
+├── network.tf        # Serverless VPC Access connector
+├── run.tf            # Cloud Run service definition
+├── secrets.tf        # Secret Manager setup
+└── outputs.tf        # URLs and sensitive outputs
 ```
 
-## 🔧 Configuración
+## 🔧 Configuration Surface
 
-### Variables principales:
+Key variables in `variables.tf`:
 
-- `project_id`: ID de tu proyecto GCP
-- `region`: Región de despliegue (default: `us-central1`)
-- `min_instances`: Instancias mínimas (default: `1` - para alta disponibilidad)
-- `max_instances`: Instancias máximas (default: `1`)
-- `db_tier`: Tier de Cloud SQL (default: `db-f1-micro`)
-- `timezone`: Zona horaria (default: `America/Mexico_City`)
-- `webhook_url`: URL externa a la que n8n expone editor y webhooks (`https://n8n.edgardo.com.mx/` por defecto)
-- `n8n_user_management_disabled`: Desactiva la UI de creación de usuarios adicionales (`true` por defecto)
-- `vpc_connector_name` / `vpc_connector_cidr`: Parámetros del Serverless VPC Access connector que enruta Cloud Run hacia la IP privada de Cloud SQL
+- `project_id`: Target GCP project (required).
+- `region`: Region (default `us-central1`).
+- `min_instances`, `max_instances`: Cloud Run scaling floor/ceiling (default `1`/`1`).
+- `db_tier`: Cloud SQL tier (`db-f1-micro` default).
+- `timezone`: n8n timezone (`America/Mexico_City` default).
+- `webhook_url`: External URL for editor & webhooks (`https://n8n.edgardo.com.mx/` default).
+- `n8n_user_management_disabled`: Disables additional-user wizard (`true` default).
+- `vpc_connector_name`, `vpc_connector_cidr`: Serverless VPC Access connector parameters.
 
-### Actualizar N8N_PUBLIC_URL (recomendado)
+### Optional public URL alignment
 
-Después del primer deployment:
+After the first deploy you can explicitly align the public URLs:
 
 ```bash
 RUN_URL="https://n8n-xxxxx-uc.a.run.app"
@@ -194,122 +154,96 @@ gcloud run services update n8n \
   --set-env-vars N8N_PUBLIC_URL="$RUN_URL",N8N_EDITOR_BASE_URL="$RUN_URL",WEBHOOK_URL="$RUN_URL"
 ```
 
-## 🛠️ Comandos útiles
+## 🔐 Security Surface
 
-### Ver logs
+- **Basic Auth** guards the UI out of the box.
+- **TLS** covers every hop (Cloud Run enforces HTTPS, the connector speaks TLS to Cloud SQL).
+- **Private Database** means no public IP exposure.
+- **Secrets** are centralized (Secret Manager) and rotated via Terraform.
+- **IAM** is tightly scoped—no wildcard roles.
+
+## 🛠️ Useful Commands
 
 ```bash
 gcloud logging read "resource.type=cloud_run_revision AND resource.labels.service_name=n8n" --limit 50
 ```
 
-### Escalar instancias manualmente
+Manual scaling:
 
 ```bash
 gcloud run services update n8n --min-instances=1 --max-instances=3 --region=$TF_VAR_region
 ```
 
-### Backup de la base de datos
-
-Los backups automáticos están habilitados con PITR (Point-in-Time Recovery).
-
-### Eliminar deployment
+Destroy everything:
 
 ```bash
 terraform destroy
 ```
 
-## 🐛 Troubleshooting
+## ⚙️ Lifecycle Management
 
-### Error de permisos
+Operate the platform with the same rigor you deployed it.
 
-Verifica que tienes los siguientes roles en GCP:
-- `roles/owner` o `roles/editor`
-- `roles/iam.securityAdmin` (para IAM)
-- `roles/resourcemanager.projectIamAdmin` (para IAM)
+### Upgrade n8n
 
-### Error de APIs no habilitadas
-
-Las APIs se habilitan automáticamente, pero pueden tardar unos minutos. Espera 2-3 minutos después de `terraform apply` antes de preocuparte.
-
-## 🔐 Seguridad
-
-- **Basic Auth**: UI protegido con usuario/contraseña
-- **HTTPS**: Conexiones encriptadas
-- **Cloud SQL**: Sin IP pública, solo Cloud SQL connector
-- **Secret Manager**: Credenciales almacenadas de forma segura
-- **IAM**: Permisos mínimos necesarios
-
-## ⚙️ Gestión del Ciclo de Vida de la Plataforma
-
-Una vez desplegada, la gestión de la plataforma sigue los principios de IaC. A continuación, se presentan los patrones operativos más comunes.
-
-### Actualización de la Versión de n8n
-
-Para actualizar la versión de n8n, modifica la etiqueta de la imagen en `variables.tf` y aplica el cambio.
-
-1.  **En `variables.tf`:**
-    ```terraform
-    variable "n8n_image" {
-      description = "Imagen de n8n"
-      type        = string
-      default     = "docker.io/n8nio/n8n:latest" # Cambiar a, ej: "docker.io/n8nio/n8n:1.45.1"
-    }
-    ```
-2.  **Aplica el cambio:**
-    ```bash
-    terraform apply
-    ```
-    Cloud Run realizará un despliegue "rolling update" sin tiempo de inactividad.
-
-### Escalado de la Plataforma
-
-Para escalar los recursos, ajusta las variables correspondientes en `variables.tf` y aplica los cambios.
-
-*   **Escalado de Cómputo:** Modifica `min_instances` o `max_instances`.
-*   **Escalado de Base de Datos:** Modifica el `db_tier` a una instancia superior (ej. `db-g1-small`).
-
-### Destrucción del Entorno
-
-Para eliminar completamente todos los recursos gestionados por este proyecto, utiliza el comando `destroy`.
+```terraform
+variable "n8n_image" {
+  description = "n8n Docker image"
+  type        = string
+  default     = "docker.io/n8nio/n8n:latest" # e.g. docker.io/n8nio/n8n:1.45.1
+}
+```
 
 ```bash
-# Este comando es irreversible y eliminará la base de datos y todos los datos asociados.
+terraform apply
+```
+
+Cloud Run performs a rolling update—no downtime.
+
+### Scale the footprint
+
+- **Compute**: adjust `min_instances`, `max_instances`, or CPU/RAM limits.
+- **Networking**: adapt `vpc_connector_cidr` or provision a new connector if your VPC map evolves.
+- **Database**: bump `db_tier`, storage size, or add high availability as workloads grow.
+
+### Decommission
+
+```bash
 terraform destroy
 ```
 
-## 📞 Soporte
+Destroys Cloud Run, Cloud SQL, secrets, and IAM bindings (irreversible).
 
-Para problemas o preguntas, consulta:
-- [Documentación de n8n](https://docs.n8n.io/)
-- [Documentación de Cloud Run](https://cloud.google.com/run/docs)
-- [Foro de n8n](https://community.n8n.io/)
+## 📞 Support & References
 
-## ⚖️ Análisis Arquitectónico: Self-Hosted vs. n8n Enterprise Cloud
+- [n8n Documentation](https://docs.n8n.io/)
+- [Cloud Run Documentation](https://cloud.google.com/run/docs)
+- [Secret Manager Documentation](https://cloud.google.com/secret-manager/docs)
+- [Cloud SQL Private IP Guide](https://cloud.google.com/sql/docs/postgres/private-ip)
 
-La decisión de autogestionar n8n en GCP en lugar de utilizar la oferta SaaS de n8n Cloud es una elección de diseño deliberada, centrada en el control y la integración profunda. Este enfoque se alinea con una filosofía de "construir" (build) en lugar de "comprar" (buy) cuando el control granular de la plataforma es un requisito clave.
+## ⚖️ Build vs Buy: Self-Hosted vs n8n Enterprise Cloud
 
-| Criterio | Self-Hosted en GCP (Este Template) | n8n Enterprise Cloud (SaaS) |
+| Criterion | Self-Hosted on GCP (This Template) | n8n Enterprise Cloud (SaaS) |
 | :--- | :--- | :--- |
-| **Control y Customización** | **Total.** Control absoluto sobre el entorno de ejecución, redes (VPC), IAM y la integración nativa con el ecosistema GCP. | **Limitado.** La infraestructura está abstraída. Se obtiene una plataforma funcional sin control sobre los recursos subyacentes. |
-| **Costo Operativo** | **Transparente y Basado en Consumo.** Pagas directamente a GCP por los recursos que consumes. | **Basado en Tiers y Características.** Un precio fijo que encapsula infraestructura, software y soporte. |
-| **Overhead de Mantenimiento** | **Tu Responsabilidad.** Actualizaciones, monitoreo y gestión de la plataforma recaen en tu equipo. | **Cero.** El SRE de n8n gestiona la disponibilidad, actualizaciones y parches. |
-| **Seguridad y Cumplimiento** | **Tu Responsabilidad.** Permite implementar arquitecturas de seguridad a medida, pero la configuración y el mantenimiento son tu responsabilidad. | **Responsabilidad del Proveedor.** n8n es responsable de la seguridad de la plataforma y el cumplimiento de normativas. |
-| **Características y Soporte** | **Comunitario.** Utiliza la versión de código abierto. El soporte proviene de la comunidad, sin SLA. | **Premium.** Acceso a características empresariales (SSO, RBAC), soporte técnico dedicado y un SLA garantizado. |
+| **Control & Customization** | Full control over runtime, networking, IAM, observability. | Managed abstraction; limited deep customization. |
+| **Cost Model** | Pay only for the GCP resources consumed. | Subscription covers infra, platform, and support. |
+| **Operational Overhead** | Your team owns upgrades, monitoring, incident response. | Managed by n8n SRE with SLA-backed support. |
+| **Security & Compliance** | Tailor to your policies (private IP, custom VPC, IAM hardening). | Vendor-managed compliance posture. |
+| **Enterprise Features** | OSS feature set; community support only. | Add-ons (SSO, RBAC, audit logs) plus enterprise support. |
 
-### Veredicto
-
-Este **acelerador** es ideal para arquitectos y equipos de plataforma que requieren una integración profunda de n8n en su ecosistema GCP, necesitan control granular sobre la seguridad y operan bajo un modelo de IaC. Para equipos que buscan una solución "llave en mano" sin carga operativa, n8n Enterprise Cloud es la alternativa recomendada.
-
+**Verdict:**  
+This accelerator is for platform architects who want n8n embedded inside their GCP estate with precision control over security, networking, and automation. If your priority is a turnkey experience with managed SLAs, n8n Enterprise Cloud remains the alternative.
 
 ## Troubleshooting
 
-### El servicio de Cloud Run no arranca o muestra errores 503
+- **Cloud Run fails with `PORT` / database errors**  
+  - Confirm the Serverless VPC connector (`n8n-connector`) is attached.
+  - Allow the connector CIDR (`10.8.0.0/28`) to reach Cloud SQL via firewall.
+  - Ensure `run.googleapis.com/cloudsql-instances` matches `project:region:instance`.
+  - Verify secrets exist and the service account owns `secretmanager.secretAccessor`.
 
-Al desplegar por primera vez, es posible que el contenedor de n8n arranque más rápido que la base de datos Cloud SQL. Esto puede causar errores de conexión (`Database is not ready!`).
+- **APIs not enabled yet**  
+  - API enablement can lag a couple of minutes. Retry `terraform apply` once they finish propagating.
 
-- **Solución:** El `run.tf` incluye una "sonda de arranque" (`startup_probe`) y la variable de entorno `DB_POSTGRESDB_INIT_MAX_RETRIES` que le dan a n8n tiempo suficiente para esperar a que la base de datos esté lista y reintentar la conexión. Si el problema persiste, verifica los logs del servicio en la consola de Google Cloud para más detalles.
-
-
-
-
-
+- **Drift detected after console edits**  
+  - Run `terraform plan` to inspect; either revert manually or codify the change in Terraform to keep the state clean.
